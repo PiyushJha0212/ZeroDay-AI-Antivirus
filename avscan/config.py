@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -20,7 +21,10 @@ from pathlib import Path
 #   avscan/config.py  ->  ROOT = <project root>
 # ─────────────────────────────────────────────────────────────────────────────
 AVSCAN_DIR = Path(__file__).resolve().parent
-ROOT = AVSCAN_DIR.parent
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    ROOT = Path(sys._MEIPASS)
+else:
+    ROOT = AVSCAN_DIR.parent
 
 MODELS_DIR = ROOT / "models" / "v7"
 LGBM_PATH = MODELS_DIR / "lgbm_v7_correct.pkl"          # PRIMARY model — USE THIS

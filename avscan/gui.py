@@ -44,6 +44,9 @@ if HAVE_QT:
     from .selfcheck import run_selfcheck, status_line
     from . import report as report_mod
 
+    class WatcherBridge(QtCore.QObject):
+        event_received = QtCore.Signal(object)
+
     class SelfCheckWorker(QtCore.QThread):
         done = QtCore.Signal(object)
 
@@ -134,6 +137,27 @@ if HAVE_QT:
                     signature_status=self.fr.signature_status,
                     signature_signer=self.fr.signature_signer,
                 )
+                hybrid_header = (
+                    f"==================================================\n"
+                    f"HYBRID AI DETECTION BREAKDOWN\n"
+                    f"==================================================\n"
+                    f"• Final Verdict: {getattr(self.fr, 'final_verdict', None) or self.fr.ml_verdict}\n"
+                    f"• Combined Risk: {f'{self.fr.combined_prob*100:.1f}% ({self.fr.risk_level})' if getattr(self.fr, 'combined_prob', None) is not None else 'N/A'}\n\n"
+                    f"[Model 1] LightGBM Static Analysis:\n"
+                    f"  - Verdict: {self.fr.ml_verdict}\n"
+                    f"  - Probability: {f'{self.fr.lgbm_prob*100:.1f}%' if self.fr.lgbm_prob is not None else 'N/A'}\n"
+                    f"  - Scope: 2,381 PE structural features (Entropy, Imports, Sections)\n\n"
+                    f"[Model 2] ResNet-18 Deep Learning Vision:\n"
+                    f"  - Verdict: {getattr(self.fr, 'cnn_verdict', 'N/A')}\n"
+                    f"  - Probability: {f'{self.fr.cnn_prob*100:.1f}%' if getattr(self.fr, 'cnn_prob', None) is not None else 'N/A'}\n"
+                    f"  - Transformation: 256x256 grayscale macro-texture matrix\n\n"
+                    f"• Agreement: {'CONCURRING' if not getattr(self.fr, 'models_disagree', False) else 'DISAGREE (Escalated to grey zone)'}\n"
+                    f"==================================================\n\n"
+                )
+                if "summary" in result and result["summary"]:
+                    result["summary"] = hybrid_header + result["summary"]
+                else:
+                    result["summary"] = hybrid_header
                 self.done.emit(result)
             except Exception as e:  # never let the worker die silently
                 self.failed.emit(f"{type(e).__name__}: {e}")
@@ -325,8 +349,9 @@ if HAVE_QT:
                 self.sub.setText(sub)
 
     class MainWindow(QtWidgets.QMainWindow):
-        COLUMNS = ["File", "Verdict", "Confidence",
-                   "Signature match (SHA-256)", "Path"]
+        COLUMNS = ["File", "Verdict", "Combined Risk",
+                   "LightGBM (Static)", "ResNet-18 (Vision)",
+                   "Signature / Hash", "Path"]
 
         def __init__(self, mode: str = theme.DEFAULT_MODE):
             super().__init__()
@@ -348,6 +373,10 @@ if HAVE_QT:
             self._live_flush = QtCore.QTimer(self)
             self._live_flush.setInterval(150)
             self._live_flush.timeout.connect(self._flush_live_results)
+
+            self._watcher = None
+            self._watcher_bridge = WatcherBridge()
+            self._watcher_bridge.event_received.connect(self._on_watcher_event_received)
 
             self._build_ui()
             self._apply_theme()
@@ -444,7 +473,12 @@ if HAVE_QT:
             self.cb_quar = QtWidgets.QCheckBox("Auto-quarantine malware")
             self.cb_hash = QtWidgets.QCheckBox("Compare against signature DB")
             self.cb_hash.setChecked(True)
-            for cb in (self.cb_white, self.cb_quar, self.cb_hash):
+            self.cb_watch = QtWidgets.QCheckBox("Real-time Downloads monitor")
+            self.cb_watch.setChecked(False)
+            self.cb_watch.setToolTip(
+                "Monitors your Downloads folder in real-time and auto-scans new executables.")
+            self.cb_watch.toggled.connect(self._toggle_watcher)
+            for cb in (self.cb_white, self.cb_quar, self.cb_hash, self.cb_watch):
                 cb.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
                 tog.addWidget(cb)
             tog.addStretch(1)
@@ -652,10 +686,12 @@ if HAVE_QT:
             self.table.setAlternatingRowColors(False)
             self.table.verticalHeader().setVisible(False)
             self.table.verticalHeader().setDefaultSectionSize(34)
-            self.table.setColumnWidth(0, 230)
-            self.table.setColumnWidth(1, 120)
-            self.table.setColumnWidth(2, 95)
-            self.table.setColumnWidth(3, 330)   # fits "Signed: X · ML: MALWARE"
+            self.table.setColumnWidth(0, 180)
+            self.table.setColumnWidth(1, 110)
+            self.table.setColumnWidth(2, 120)
+            self.table.setColumnWidth(3, 140)
+            self.table.setColumnWidth(4, 140)
+            self.table.setColumnWidth(5, 220)
             self.badge_delegate = BadgeDelegate(self._mode, self.table)
             self.table.setItemDelegateForColumn(1, self.badge_delegate)
             self.table.setContextMenuPolicy(
@@ -846,8 +882,9 @@ if HAVE_QT:
         # ── summary + table ──────────────────────────────────────────────────
         @staticmethod
         def _shown_verdict(fr):
+            base = getattr(fr, "final_verdict", None) or fr.ml_verdict
             return signature.display_verdict(
-                fr.ml_verdict, fr.signature_status, fr.hash_verdict)
+                base, fr.signature_status, fr.hash_verdict)
 
         def _update_summary(self, scan):
             s = scan.summary
@@ -874,8 +911,8 @@ if HAVE_QT:
 
         # Rank used when sorting the Verdict column — severity order, not
         # alphabetical, so MALWARE sorts to one end.
-        _VERDICT_RANK = {MALWARE: 0, ERROR: 1,
-                         signature.SIGNED_SAFE: 2, SAFE: 3}
+        _VERDICT_RANK = {MALWARE: 0, "SUSPICIOUS": 1, ERROR: 2,
+                         signature.SIGNED_SAFE: 3, SAFE: 4}
 
         def _sort_key(self, col):
             if col == 0:
@@ -883,10 +920,14 @@ if HAVE_QT:
             if col == 1:
                 return lambda fr: self._VERDICT_RANK.get(self._shown_verdict(fr), 99)
             if col == 2:
-                return lambda fr: fr.lgbm_prob if fr.lgbm_prob is not None else -1.0
+                return lambda fr: fr.combined_prob if fr.combined_prob is not None else -1.0
             if col == 3:
-                return lambda fr: ((fr.hash_verdict or ""), (fr.signature_signer or ""))
+                return lambda fr: fr.lgbm_prob if fr.lgbm_prob is not None else -1.0
             if col == 4:
+                return lambda fr: fr.cnn_prob if fr.cnn_prob is not None else -1.0
+            if col == 5:
+                return lambda fr: ((fr.hash_verdict or ""), (fr.signature_signer or ""))
+            if col == 6:
                 return lambda fr: fr.path.lower()
             return lambda fr: 0
 
@@ -912,29 +953,38 @@ if HAVE_QT:
             row = self.table.rowCount()
             self.table.insertRow(row)
             shown = self._shown_verdict(fr)
-            prob = "" if fr.lgbm_prob is None else f"{fr.lgbm_prob * 100:.1f}%"
+            
+            combined_text = (f"{fr.combined_prob * 100:.1f}% ({fr.risk_level})"
+                             if getattr(fr, "combined_prob", None) is not None else "—")
+            lgbm_text = (f"{fr.ml_verdict} ({fr.lgbm_prob * 100:.1f}%)"
+                         if getattr(fr, "lgbm_prob", None) is not None else (fr.ml_verdict or "—"))
+            cnn_text = (f"{getattr(fr, 'cnn_verdict', '—')} ({fr.cnn_prob * 100:.1f}%)"
+                        if getattr(fr, "cnn_prob", None) is not None else (getattr(fr, "cnn_verdict", None) or "—"))
             sig = fr.hash_verdict or "—"
-            tip = f"ML verdict: {fr.ml_verdict}"
-            # A validly signed file is shown green, but its real ML verdict
-            # stays visible in the row so the table remains auditable.
+            
+            tip = (f"Ensemble Verdict: {shown}\nCombined Risk: {combined_text}\n"
+                   f"LightGBM Static: {lgbm_text}\nResNet-18 Vision: {cnn_text}")
+            if getattr(fr, "models_disagree", False):
+                tip += "\n⚠️ Models disagree! Escalated to grey zone / behavioral review."
+            
             if shown == signature.SIGNED_SAFE:
                 signer = fr.signature_signer or "trusted publisher"
-                sig = f"Signed: {signer}  ·  ML: {fr.ml_verdict}"
-                tip = (f"The model flagged this file as {fr.ml_verdict}, but it "
-                       f"carries a valid Authenticode signature from {signer}, "
-                       f"so it is shown as clean.")
-            cells = [fr.name, shown, prob, sig, fr.path]
+                sig = f"Signed: {signer}  ·  AI: {getattr(fr, 'final_verdict', None) or fr.ml_verdict}"
+                tip = (f"Flagged by AI, but validly signed by {signer}. "
+                       f"Shown as safe per policy.")
+                       
+            cells = [fr.name, shown, combined_text, lgbm_text, cnn_text, sig, fr.path]
             for col, text in enumerate(cells):
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setData(QtCore.Qt.ItemDataRole.UserRole, fr)
-                item.setToolTip(tip if col in (1, 3) else text)
+                item.setToolTip(tip if col in (1, 2, 3, 4, 5) else text)
                 if col == 1:
                     item.setData(BadgeDelegate.ROLE, shown)
-                if col == 2:
+                if col in (2, 3, 4):
                     item.setTextAlignment(
-                        QtCore.Qt.AlignmentFlag.AlignRight
+                        QtCore.Qt.AlignmentFlag.AlignCenter
                         | QtCore.Qt.AlignmentFlag.AlignVCenter)
-                if col == 3 and fr.hash_verdict == KNOWN_MALWARE:
+                if col == 5 and fr.hash_verdict == KNOWN_MALWARE:
                     item.setForeground(
                         QtGui.QColor(theme.palette(self._mode)["danger"]))
                 self.table.setItem(row, col, item)
@@ -1101,8 +1151,58 @@ if HAVE_QT:
                 self, "Restore All",
                 f"Restored {len(restored)} file(s).\nFailed: {failed} file(s).")
 
+        # ── real-time downloads monitor ──────────────────────────────────────
+        def _toggle_watcher(self, enabled: bool):
+            if enabled:
+                from .watcher import EndpointWatcher
+                if self._watcher is None:
+                    self._watcher = EndpointWatcher(
+                        event_callback=lambda ev: self._watcher_bridge.event_received.emit(ev)
+                    )
+                ok = self._watcher.start()
+                if ok:
+                    self.status.showMessage(
+                        f"Real-time monitoring active on: {self._watcher.watch_dir}", 6000)
+                else:
+                    self.cb_watch.setChecked(False)
+                    QtWidgets.QMessageBox.warning(
+                        self, "Monitor", "Could not start folder monitor.")
+            else:
+                if self._watcher:
+                    self._watcher.stop()
+                    self.status.showMessage("Real-time monitoring stopped.", 3000)
+
+        def _on_watcher_event_received(self, ev):
+            from .orchestrator import FileResult
+            ens = ev.ensemble_result
+            size = 0
+            try:
+                if os.path.exists(ev.path):
+                    size = os.path.getsize(ev.path)
+            except Exception:
+                pass
+
+            fr = FileResult(
+                path=ev.path, name=ev.file_name, sha256=ev.sha256, size=size,
+                ml_verdict=ens.lgbm_verdict, lgbm_prob=ens.lgbm_prob,
+                cnn_verdict=ens.cnn_verdict, cnn_prob=ens.cnn_prob,
+                combined_prob=ens.combined_prob,
+                final_verdict=ens.final_verdict,
+                risk_level=ens.risk_level,
+                models_disagree=ens.models_disagree,
+                quarantined=ev.quarantined,
+                quarantine_path=ev.quarantine_path,
+            )
+            self._results.append(fr)
+            self._append_row(fr)
+            self._update_result_count()
+            self.status.showMessage(
+                f"Real-time scan: {ev.file_name} -> {ens.final_verdict} (Risk: {ens.combined_prob * 100:.1f}%)", 8000)
+
         # ── shutdown ─────────────────────────────────────────────────────────
         def closeEvent(self, event):
+            if getattr(self, "_watcher", None):
+                self._watcher.stop()
             """Let running workers finish before the window goes away.
 
             Qt aborts the process with "QThread: Destroyed while thread is still

@@ -17,7 +17,10 @@ rem ---------------------------------------------------------------------------
 setlocal
 
 set "ROOT=%~dp0"
-set "PYW=%ROOT%venv_v7\Scripts\pythonw.exe"
+set "PYW="
+if exist "%ROOT%..\venv\Scripts\pythonw.exe" set "PYW=%ROOT%..\venv\Scripts\pythonw.exe"
+if exist "%ROOT%venv\Scripts\pythonw.exe" set "PYW=%ROOT%venv\Scripts\pythonw.exe"
+if exist "%ROOT%venv_v7\Scripts\pythonw.exe" set "PYW=%ROOT%venv_v7\Scripts\pythonw.exe"
 
 rem Lets "-m avscan.gui" find the package without depending on the current dir.
 set "PYTHONPATH=%ROOT%"

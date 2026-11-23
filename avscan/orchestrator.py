@@ -25,6 +25,7 @@ from typing import Callable, Iterable
 
 from . import config, signature
 from .engine import Engine, get_engine, MALWARE, SAFE, ERROR
+from .ensemble import EnsembleEngine, EnsembleResult, get_ensemble_engine, SUSPICIOUS
 from .hashdb import HashDB, KNOWN_MALWARE, NOT_IN_DB
 
 # comparison_tag constants (spec §3.5.5)
@@ -44,6 +45,12 @@ class FileResult:
     size: int
     ml_verdict: str                  # MALWARE | SAFE | ERROR
     lgbm_prob: float | None = None
+    cnn_verdict: str | None = None
+    cnn_prob: float | None = None
+    combined_prob: float | None = None
+    final_verdict: str | None = None # MALWARE | SUSPICIOUS | SAFE | ERROR
+    risk_level: str | None = None
+    models_disagree: bool = False
     hash_verdict: str | None = None  # KNOWN_MALWARE | NOT_IN_DB | None(=not checked)
     comparison_tag: str | None = None
     error: str | None = None
@@ -57,12 +64,8 @@ class FileResult:
 
     @property
     def ml_flagged(self) -> bool:
-        # ERROR (couldn't be read/parsed/classified) is treated as flagged, not
-        # as a neutral third state: fail-closed policy — if we can't determine
-        # a file is safe, it does not get to sit unflagged. Quarantine
-        # eligibility, display, and tallying all key off this property, so the
-        # policy lives in exactly one place.
-        return self.ml_verdict in (MALWARE, ERROR)
+        verdict = self.final_verdict or self.ml_verdict
+        return verdict in (MALWARE, SUSPICIOUS, ERROR)
 
 
 @dataclass
@@ -149,6 +152,7 @@ def scan_folder(
     folder,
     *,
     engine: Engine | None = None,
+    ensemble_engine: EnsembleEngine | None = None,
     whitelist_enabled: bool = True,
     whitelist_prefixes: list[str] | None = None,
     hash_db: HashDB | None = None,
@@ -185,8 +189,10 @@ def scan_folder(
     started_at = datetime.now(timezone.utc).isoformat()
     t0 = time.time()
 
+    if ensemble_engine is None:
+        ensemble_engine = get_ensemble_engine()
     if engine is None:
-        engine = get_engine()
+        engine = ensemble_engine.lgbm_engine
 
     # Hash layer setup (independent of ML).
     owns_db = False
@@ -226,25 +232,33 @@ def scan_folder(
 
         summary.scanned += 1
 
-        # ML layer (independent) — classify_file reads the bytes once and hashes.
-        ml, sha, size = engine.classify_file(fp)
+        # Dual-Engine AI (Hybrid Ensemble): LightGBM + ResNet-18 Vision
+        ens_res, sha, size = ensemble_engine.classify_file(fp)
 
         # Hash layer (independent) — never feeds back into the ML verdict.
         hv = hash_db.verdict(sha) if (hash_active and sha) else None
 
+        active_verdict = ens_res.final_verdict
         fr = FileResult(
             path=str(fp), name=fp.name, sha256=sha, size=size,
-            ml_verdict=ml.ml_verdict, lgbm_prob=ml.lgbm_prob,
-            hash_verdict=hv, comparison_tag=comparison_tag(ml.ml_verdict, hv),
-            error=ml.error,
+            ml_verdict=ens_res.lgbm_verdict, lgbm_prob=ens_res.lgbm_prob,
+            cnn_verdict=ens_res.cnn_verdict, cnn_prob=ens_res.cnn_prob,
+            combined_prob=ens_res.combined_prob,
+            final_verdict=active_verdict,
+            risk_level=ens_res.risk_level,
+            models_disagree=ens_res.models_disagree,
+            hash_verdict=hv, comparison_tag=comparison_tag(active_verdict, hv),
+            error=ens_res.error,
         )
 
         # Tally. ERROR counts as malware (fail-closed — see FileResult.ml_flagged)
         # AND as errors, so `errors` is an informational subset of `malware`,
         # not a third top-level bucket: malware + safe == scanned still holds.
-        if fr.ml_verdict == MALWARE:
+        if active_verdict == MALWARE:
             summary.malware += 1
-        elif fr.ml_verdict == SAFE:
+        elif active_verdict == SUSPICIOUS:
+            summary.malware += 1  # Grey-zone is flagged
+        elif active_verdict == SAFE:
             summary.safe += 1
         else:  # ERROR
             summary.malware += 1

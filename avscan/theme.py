@@ -119,13 +119,11 @@ def scaled(px: int) -> int:
 # the summary cards and the Tk popup. Keyed by the DISPLAY verdict returned by
 # signature.display_verdict() — not the raw ML verdict.
 _BADGES = {
-    "MALWARE":           ("MALWARE",   "danger"),
-    "SAFE":              ("SAFE",      "success"),
-    # Red, not neutral: an unreadable/unparseable file is treated as flagged
-    # under the fail-closed policy (FileResult.ml_flagged), so it must not
-    # look like a lesser, ignorable state next to a real MALWARE row.
-    "ERROR":             ("ERROR",     "danger"),
-    "SIGNED_SAFE":       ("SIGNED",    "success"),
+    "MALWARE":           ("MALWARE",    "danger"),
+    "SUSPICIOUS":        ("SUSPICIOUS", "warn"),
+    "SAFE":              ("SAFE",       "success"),
+    "ERROR":             ("ERROR",      "danger"),
+    "SIGNED_SAFE":       ("SIGNED",     "success"),
 }
 
 

@@ -37,6 +37,8 @@ HASH/
 quarantine/
 logs/
 evaluation/
+dist/
+build/
 
 # ---- Loose large-data patterns (defense in depth) ----
 *.dat
