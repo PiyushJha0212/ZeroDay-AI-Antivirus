@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 from . import config, explain, signature, theme
@@ -350,8 +352,11 @@ if HAVE_QT:
 
     class MainWindow(QtWidgets.QMainWindow):
         COLUMNS = ["File", "Verdict", "Combined Risk",
-                   "LightGBM (Static)", "ResNet-18 (Vision)",
                    "Signature / Hash", "Path"]
+        MONITOR_COLUMNS = [
+            "Time", "Monitored Folder", "File Name", "Verdict",
+            "Risk Score", "LightGBM", "ResNet-18", "Action Taken", "SHA-256"
+        ]
 
         def __init__(self, mode: str = theme.DEFAULT_MODE):
             super().__init__()
@@ -377,6 +382,8 @@ if HAVE_QT:
             self._watcher = None
             self._watcher_bridge = WatcherBridge()
             self._watcher_bridge.event_received.connect(self._on_watcher_event_received)
+            self._mon_counts = dict(scanned=0, threats=0, safe=0)
+            self._cards = []
 
             self._build_ui()
             self._apply_theme()
@@ -392,20 +399,234 @@ if HAVE_QT:
 
             outer.addWidget(self._build_header())
 
-            body = QtWidgets.QWidget()
-            root = QtWidgets.QVBoxLayout(body)
+            # Tabbed interface for Scan and Folder Monitoring
+            self.tabs = QtWidgets.QTabWidget()
+            self.tabs.setDocumentMode(True)
+            outer.addWidget(self.tabs, 1)
+
+            # Tab 1: Manual Scan & PE Analysis
+            self.scan_tab = self._build_scan_tab()
+            self.tabs.addTab(self.scan_tab, "🔍  Scan & Analysis")
+
+            # Tab 2: Monitored Folders & Real-Time Endpoint Watcher
+            self.monitor_tab = self._build_monitor_tab()
+            self.tabs.addTab(self.monitor_tab, "👁️  Monitored Folders")
+
+            self.status = self.statusBar()
+            self.status.showMessage("Running startup self-check…")
+
+        def _build_scan_tab(self):
+            tab = QtWidgets.QWidget()
+            root = QtWidgets.QVBoxLayout(tab)
             root.setContentsMargins(18, 16, 18, 14)
             root.setSpacing(14)
-            outer.addWidget(body, 1)
 
             root.addWidget(self._build_scan_card())
             root.addLayout(self._build_stats_row())
             root.addLayout(self._build_toolbar())
             root.addWidget(self._build_table(), 1)
             root.addLayout(self._build_progress())
+            return tab
 
-            self.status = self.statusBar()
-            self.status.showMessage("Running startup self-check…")
+        def _build_monitor_tab(self):
+            tab = QtWidgets.QWidget()
+            root = QtWidgets.QVBoxLayout(tab)
+            root.setContentsMargins(18, 16, 18, 14)
+            root.setSpacing(14)
+
+            root.addWidget(self._build_monitor_header_card())
+
+            mid_row = QtWidgets.QHBoxLayout()
+            mid_row.setSpacing(14)
+            mid_row.addWidget(self._build_folder_manager_card(), 3)
+            mid_row.addLayout(self._build_monitor_stats_col(), 2)
+            root.addLayout(mid_row)
+
+            root.addWidget(self._build_monitor_log_card(), 1)
+            return tab
+
+        def _build_monitor_header_card(self):
+            card = QtWidgets.QFrame()
+            card.setObjectName("Card")
+            lay = QtWidgets.QHBoxLayout(card)
+            lay.setContentsMargins(16, 14, 16, 14)
+            lay.setSpacing(14)
+
+            info_box = QtWidgets.QVBoxLayout()
+            info_box.setSpacing(3)
+            title = QtWidgets.QLabel("REAL-TIME ENDPOINT WATCHDOG")
+            title.setObjectName("SectionLabel")
+            desc = QtWidgets.QLabel(
+                "Continuous background monitoring across designated folders. Executable files dropped or downloaded "
+                "are intercepted immediately, hashed, and evaluated through the LightGBM + ResNet-18 ensemble."
+            )
+            desc.setObjectName("CurrentFile")
+            desc.setWordWrap(True)
+            info_box.addWidget(title)
+            info_box.addWidget(desc)
+            lay.addLayout(info_box, 1)
+
+            btn_box = QtWidgets.QHBoxLayout()
+            btn_box.setSpacing(10)
+
+            self.monitor_status_pill = QtWidgets.QLabel("● INACTIVE")
+            self.monitor_status_pill.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            btn_box.addWidget(self.monitor_status_pill)
+
+            self.btn_toggle_monitor = QtWidgets.QPushButton("▶  Start Monitoring")
+            self.btn_toggle_monitor.setObjectName("Primary")
+            self.btn_toggle_monitor.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_toggle_monitor.clicked.connect(self._on_toggle_monitor_clicked)
+            btn_box.addWidget(self.btn_toggle_monitor)
+
+            lay.addLayout(btn_box)
+            return card
+
+        def _paint_monitor_pill(self, active: bool):
+            p = theme.palette(self._mode)
+            if active:
+                text = "● ACTIVE"
+                fg = p["success"]
+                bg = p["success_bg"]
+            else:
+                text = "● INACTIVE"
+                fg = p["neutral"]
+                bg = p["neutral_bg"]
+            self.monitor_status_pill.setText(text)
+            self.monitor_status_pill.setStyleSheet(
+                f"color: {fg}; background: {bg};"
+                f" border-radius: 11px; padding: 5px 14px;"
+                f" font-size: 11px; font-weight: 600;"
+            )
+
+        def _build_folder_manager_card(self):
+            card = QtWidgets.QFrame()
+            card.setObjectName("Card")
+            lay = QtWidgets.QVBoxLayout(card)
+            lay.setContentsMargins(16, 14, 16, 14)
+            lay.setSpacing(10)
+
+            heading = QtWidgets.QLabel("WATCHED DIRECTORIES")
+            heading.setObjectName("SectionLabel")
+            lay.addWidget(heading)
+
+            self.watch_list = QtWidgets.QListWidget()
+            self.watch_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+            self.watch_list.setMinimumHeight(110)
+            self.watch_list.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+
+            downloads = Path.home() / "Downloads"
+            item = QtWidgets.QListWidgetItem(f"📁  {downloads}")
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, str(downloads))
+            self.watch_list.addItem(item)
+            lay.addWidget(self.watch_list, 1)
+
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.setSpacing(8)
+
+            self.btn_add_folder = QtWidgets.QPushButton("➕  Add Folder")
+            self.btn_add_folder.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_add_folder.setToolTip("Add a new local folder to real-time AI protection")
+            self.btn_add_folder.clicked.connect(self._add_watch_folder)
+
+            self.btn_remove_folder = QtWidgets.QPushButton("➖  Remove Folder")
+            self.btn_remove_folder.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_remove_folder.setToolTip("Remove selected folder from active monitoring")
+            self.btn_remove_folder.clicked.connect(self._remove_watch_folder)
+
+            self.btn_open_folder = QtWidgets.QPushButton("📂  Open Folder")
+            self.btn_open_folder.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_open_folder.setToolTip("Open selected folder in File Explorer")
+            self.btn_open_folder.clicked.connect(self._open_selected_folder)
+
+            btn_row.addWidget(self.btn_add_folder)
+            btn_row.addWidget(self.btn_remove_folder)
+            btn_row.addWidget(self.btn_open_folder)
+            btn_row.addStretch(1)
+            lay.addLayout(btn_row)
+
+            return card
+
+        def _build_monitor_stats_col(self):
+            col = QtWidgets.QVBoxLayout()
+            col.setSpacing(10)
+
+            stat_row_1 = QtWidgets.QHBoxLayout()
+            stat_row_1.setSpacing(10)
+            self.card_mon_folders = StatCard("Watched Folders", "accent")
+            self.card_mon_scanned = StatCard("Intercepted", "text")
+            stat_row_1.addWidget(self.card_mon_folders)
+            stat_row_1.addWidget(self.card_mon_scanned)
+            col.addLayout(stat_row_1)
+
+            stat_row_2 = QtWidgets.QHBoxLayout()
+            stat_row_2.setSpacing(10)
+            self.card_mon_threats = StatCard("Threats Blocked", "danger")
+            self.card_mon_safe = StatCard("Clean Files", "success")
+            stat_row_2.addWidget(self.card_mon_threats)
+            stat_row_2.addWidget(self.card_mon_safe)
+            col.addLayout(stat_row_2)
+
+            self.card_mon_folders.set_value(1, self._mode)
+            self.card_mon_scanned.set_value(0, self._mode)
+            self.card_mon_threats.set_value(0, self._mode)
+            self.card_mon_safe.set_value(0, self._mode)
+
+            self._cards.extend([
+                self.card_mon_folders,
+                self.card_mon_scanned,
+                self.card_mon_threats,
+                self.card_mon_safe,
+            ])
+            return col
+
+        def _build_monitor_log_card(self):
+            card = QtWidgets.QFrame()
+            card.setObjectName("Card")
+            lay = QtWidgets.QVBoxLayout(card)
+            lay.setContentsMargins(16, 14, 16, 14)
+            lay.setSpacing(10)
+
+            top_row = QtWidgets.QHBoxLayout()
+            heading = QtWidgets.QLabel("INTERCEPTED ACTIVITY LOG")
+            heading.setObjectName("SectionLabel")
+            top_row.addWidget(heading)
+            top_row.addStretch(1)
+
+            self.btn_clear_log = QtWidgets.QPushButton("Clear Activity Log")
+            self.btn_clear_log.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_clear_log.clicked.connect(self._clear_monitor_log)
+            top_row.addWidget(self.btn_clear_log)
+
+            lay.addLayout(top_row)
+
+            self.monitor_table = QtWidgets.QTableWidget(0, len(self.MONITOR_COLUMNS))
+            self.monitor_table.setHorizontalHeaderLabels(self.MONITOR_COLUMNS)
+            self.monitor_table.horizontalHeader().setStretchLastSection(True)
+            self.monitor_table.horizontalHeader().setHighlightSections(False)
+            self.monitor_table.horizontalHeader().setSectionsClickable(True)
+            self.monitor_table.setSelectionBehavior(
+                QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+            self.monitor_table.setEditTriggers(
+                QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.monitor_table.setAlternatingRowColors(False)
+            self.monitor_table.verticalHeader().setVisible(False)
+            self.monitor_table.setShowGrid(False)
+
+            self.monitor_table.setColumnWidth(0, 85)   # Time
+            self.monitor_table.setColumnWidth(1, 140)  # Monitored Folder
+            self.monitor_table.setColumnWidth(2, 170)  # File Name
+            self.monitor_table.setColumnWidth(3, 110)  # Verdict
+            self.monitor_table.setColumnWidth(4, 130)  # Risk Score
+            self.monitor_table.setColumnWidth(5, 110)  # LightGBM
+            self.monitor_table.setColumnWidth(6, 110)  # ResNet-18
+            self.monitor_table.setColumnWidth(7, 140)  # Action Taken
+
+            self.monitor_badge_delegate = BadgeDelegate(self._mode, self.monitor_table)
+            self.monitor_table.setItemDelegateForColumn(3, self.monitor_badge_delegate)
+
+            lay.addWidget(self.monitor_table, 1)
+            return card
 
         def _build_header(self):
             bar = QtWidgets.QFrame()
@@ -689,9 +910,7 @@ if HAVE_QT:
             self.table.setColumnWidth(0, 180)
             self.table.setColumnWidth(1, 110)
             self.table.setColumnWidth(2, 120)
-            self.table.setColumnWidth(3, 140)
-            self.table.setColumnWidth(4, 140)
-            self.table.setColumnWidth(5, 220)
+            self.table.setColumnWidth(3, 240)
             self.badge_delegate = BadgeDelegate(self._mode, self.table)
             self.table.setItemDelegateForColumn(1, self.badge_delegate)
             self.table.setContextMenuPolicy(
@@ -718,7 +937,12 @@ if HAVE_QT:
                 app.setStyleSheet(theme.stylesheet(self._mode))
             self.theme_btn.setText("☀" if self._mode == "dark" else "☾")
             self.badge_delegate.mode = self._mode
+            if hasattr(self, "monitor_badge_delegate"):
+                self.monitor_badge_delegate.mode = self._mode
             self._paint_health_pill()
+            if hasattr(self, "monitor_status_pill"):
+                is_active = self._watcher is not None and self._watcher.is_running
+                self._paint_monitor_pill(is_active)
             self._refresh_stat_colours()
             self._refresh_table()
 
@@ -920,14 +1144,11 @@ if HAVE_QT:
             if col == 1:
                 return lambda fr: self._VERDICT_RANK.get(self._shown_verdict(fr), 99)
             if col == 2:
-                return lambda fr: fr.combined_prob if fr.combined_prob is not None else -1.0
+                return lambda fr: (fr.combined_prob if getattr(fr, "combined_prob", None) is not None
+                                   else (fr.lgbm_prob if getattr(fr, "lgbm_prob", None) is not None else -1.0))
             if col == 3:
-                return lambda fr: fr.lgbm_prob if fr.lgbm_prob is not None else -1.0
-            if col == 4:
-                return lambda fr: fr.cnn_prob if fr.cnn_prob is not None else -1.0
-            if col == 5:
                 return lambda fr: ((fr.hash_verdict or ""), (fr.signature_signer or ""))
-            if col == 6:
+            if col == 4:
                 return lambda fr: fr.path.lower()
             return lambda fr: 0
 
@@ -953,38 +1174,39 @@ if HAVE_QT:
             row = self.table.rowCount()
             self.table.insertRow(row)
             shown = self._shown_verdict(fr)
-            
-            combined_text = (f"{fr.combined_prob * 100:.1f}% ({fr.risk_level})"
-                             if getattr(fr, "combined_prob", None) is not None else "—")
-            lgbm_text = (f"{fr.ml_verdict} ({fr.lgbm_prob * 100:.1f}%)"
-                         if getattr(fr, "lgbm_prob", None) is not None else (fr.ml_verdict or "—"))
-            cnn_text = (f"{getattr(fr, 'cnn_verdict', '—')} ({fr.cnn_prob * 100:.1f}%)"
-                        if getattr(fr, "cnn_prob", None) is not None else (getattr(fr, "cnn_verdict", None) or "—"))
+
+            p = getattr(fr, "combined_prob", None)
+            if p is None:
+                p = getattr(fr, "lgbm_prob", None)
+            prob_text = f"{p * 100:.1f}%" if p is not None else "—"
+
             sig = fr.hash_verdict or "—"
-            
-            tip = (f"Ensemble Verdict: {shown}\nCombined Risk: {combined_text}\n"
-                   f"LightGBM Static: {lgbm_text}\nResNet-18 Vision: {cnn_text}")
+            tip = (f"Ensemble Verdict: {shown}\nCombined Risk: {prob_text}"
+                   f"{f' ({fr.risk_level})' if getattr(fr, 'risk_level', None) else ''}\n"
+                   f"LightGBM Static: {f'{fr.lgbm_prob*100:.1f}%' if getattr(fr, 'lgbm_prob', None) is not None else '—'}\n"
+                   f"ResNet-18 Vision: {f'{fr.cnn_prob*100:.1f}%' if getattr(fr, 'cnn_prob', None) is not None else '—'}")
             if getattr(fr, "models_disagree", False):
                 tip += "\n⚠️ Models disagree! Escalated to grey zone / behavioral review."
-            
+
             if shown == signature.SIGNED_SAFE:
                 signer = fr.signature_signer or "trusted publisher"
-                sig = f"Signed: {signer}  ·  AI: {getattr(fr, 'final_verdict', None) or fr.ml_verdict}"
-                tip = (f"Flagged by AI, but validly signed by {signer}. "
+                real_v = getattr(fr, 'final_verdict', None) or fr.ml_verdict
+                sig = f"Signed: {signer}  ·  AI: {real_v}"
+                tip = (f"Flagged as {real_v} by AI, but validly signed by {signer}. "
                        f"Shown as safe per policy.")
-                       
-            cells = [fr.name, shown, combined_text, lgbm_text, cnn_text, sig, fr.path]
+
+            cells = [fr.name, shown, prob_text, sig, fr.path]
             for col, text in enumerate(cells):
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setData(QtCore.Qt.ItemDataRole.UserRole, fr)
-                item.setToolTip(tip if col in (1, 2, 3, 4, 5) else text)
+                item.setToolTip(tip if col in (1, 2, 3) else text)
                 if col == 1:
                     item.setData(BadgeDelegate.ROLE, shown)
-                if col in (2, 3, 4):
+                if col == 2:
                     item.setTextAlignment(
                         QtCore.Qt.AlignmentFlag.AlignCenter
                         | QtCore.Qt.AlignmentFlag.AlignVCenter)
-                if col == 5 and fr.hash_verdict == KNOWN_MALWARE:
+                if col == 3 and fr.hash_verdict == KNOWN_MALWARE:
                     item.setForeground(
                         QtGui.QColor(theme.palette(self._mode)["danger"]))
                 self.table.setItem(row, col, item)
@@ -1151,26 +1373,175 @@ if HAVE_QT:
                 self, "Restore All",
                 f"Restored {len(restored)} file(s).\nFailed: {failed} file(s).")
 
-        # ── real-time downloads monitor ──────────────────────────────────────
+        # ── real-time multi-folder monitor ──────────────────────────────────
+        def _on_toggle_monitor_clicked(self):
+            is_active = self._watcher is not None and self._watcher.is_running
+            self._toggle_watcher(not is_active)
+
+        def _get_current_watch_dirs(self) -> list[Path]:
+            dirs = []
+            if hasattr(self, "watch_list"):
+                for i in range(self.watch_list.count()):
+                    item = self.watch_list.item(i)
+                    p = item.data(QtCore.Qt.ItemDataRole.UserRole)
+                    if p:
+                        dirs.append(Path(p))
+            if not dirs:
+                dirs = [Path.home() / "Downloads"]
+            return dirs
+
+        def _add_watch_folder(self):
+            folder = QtWidgets.QFileDialog.getExistingDirectory(
+                self, "Select Folder for Real-Time AI Monitoring")
+            if not folder:
+                return
+            p = Path(folder).resolve()
+            existing = [Path(self.watch_list.item(i).data(QtCore.Qt.ItemDataRole.UserRole)).resolve()
+                        for i in range(self.watch_list.count())]
+            if p in existing:
+                QtWidgets.QMessageBox.information(
+                    self, "Already Monitored", f"This folder is already in your watchlist:\n{p}")
+                return
+
+            item = QtWidgets.QListWidgetItem(f"📁  {p}")
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, str(p))
+            self.watch_list.addItem(item)
+            self.card_mon_folders.set_value(self.watch_list.count(), self._mode)
+
+            if self._watcher is not None:
+                self._watcher.add_watch_dir(p)
+
+            self.status.showMessage(f"Added folder to AI monitoring: {p}", 5000)
+
+        def _remove_watch_folder(self):
+            row = self.watch_list.currentRow()
+            if row < 0:
+                QtWidgets.QMessageBox.information(
+                    self, "Select Folder", "Please select a folder from the watchlist to remove.")
+                return
+
+            if self.watch_list.count() <= 1:
+                confirm = QtWidgets.QMessageBox.question(
+                    self, "Remove Last Monitored Folder?",
+                    "This is the only folder currently being monitored. Remove it?",
+                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                    QtWidgets.QMessageBox.StandardButton.No
+                )
+                if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+                    return
+
+            item = self.watch_list.takeItem(row)
+            p_str = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            if self._watcher is not None and p_str:
+                self._watcher.remove_watch_dir(p_str)
+
+            self.card_mon_folders.set_value(self.watch_list.count(), self._mode)
+            self.status.showMessage(f"Removed folder from monitoring: {p_str}", 4000)
+
+        def _open_selected_folder(self):
+            item = self.watch_list.currentItem()
+            if not item:
+                QtWidgets.QMessageBox.information(
+                    self, "Select Folder", "Please select a folder to open.")
+                return
+            p = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            if p and os.path.exists(p):
+                self._open_path(p)
+            else:
+                QtWidgets.QMessageBox.warning(
+                    self, "Path Not Found", f"Directory does not exist:\n{p}")
+
+        def _clear_monitor_log(self):
+            self.monitor_table.setRowCount(0)
+            self._mon_counts = dict(scanned=0, threats=0, safe=0)
+            self.card_mon_scanned.set_value(0, self._mode)
+            self.card_mon_threats.set_value(0, self._mode)
+            self.card_mon_safe.set_value(0, self._mode)
+            self.status.showMessage("Real-time activity log cleared.", 3000)
+
         def _toggle_watcher(self, enabled: bool):
             if enabled:
                 from .watcher import EndpointWatcher
+                watch_dirs = self._get_current_watch_dirs()
                 if self._watcher is None:
                     self._watcher = EndpointWatcher(
+                        watch_dirs=watch_dirs,
                         event_callback=lambda ev: self._watcher_bridge.event_received.emit(ev)
                     )
+                else:
+                    self._watcher.watch_dirs = watch_dirs
                 ok = self._watcher.start()
                 if ok:
+                    if hasattr(self, "cb_watch"):
+                        self.cb_watch.blockSignals(True)
+                        self.cb_watch.setChecked(True)
+                        self.cb_watch.blockSignals(False)
+                    if hasattr(self, "btn_toggle_monitor"):
+                        self.btn_toggle_monitor.setText("⏹  Stop Monitoring")
+                    self._paint_monitor_pill(True)
+                    count = len(self._watcher.watch_dirs)
                     self.status.showMessage(
-                        f"Real-time monitoring active on: {self._watcher.watch_dir}", 6000)
+                        f"Real-time folder monitoring active across {count} directory/directories.", 6000)
                 else:
-                    self.cb_watch.setChecked(False)
+                    if hasattr(self, "cb_watch"):
+                        self.cb_watch.blockSignals(True)
+                        self.cb_watch.setChecked(False)
+                        self.cb_watch.blockSignals(False)
+                    if hasattr(self, "btn_toggle_monitor"):
+                        self.btn_toggle_monitor.setText("▶  Start Monitoring")
+                    self._paint_monitor_pill(False)
                     QtWidgets.QMessageBox.warning(
                         self, "Monitor", "Could not start folder monitor.")
             else:
                 if self._watcher:
                     self._watcher.stop()
-                    self.status.showMessage("Real-time monitoring stopped.", 3000)
+                if hasattr(self, "cb_watch"):
+                    self.cb_watch.blockSignals(True)
+                    self.cb_watch.setChecked(False)
+                    self.cb_watch.blockSignals(False)
+                if hasattr(self, "btn_toggle_monitor"):
+                    self.btn_toggle_monitor.setText("▶  Start Monitoring")
+                self._paint_monitor_pill(False)
+                self.status.showMessage("Real-time monitoring stopped.", 3000)
+
+        def _append_monitor_row(self, ev, fr):
+            row = 0
+            self.monitor_table.insertRow(row)
+
+            time_str = datetime.now().strftime("%H:%M:%S")
+            folder_name = Path(ev.path).parent.name or str(Path(ev.path).parent)
+
+            # Columns: ["Time", "Monitored Folder", "File Name", "Verdict", "Risk Score", "LightGBM", "ResNet-18", "Action Taken", "SHA-256"]
+            items = [
+                QtWidgets.QTableWidgetItem(time_str),
+                QtWidgets.QTableWidgetItem(folder_name),
+                QtWidgets.QTableWidgetItem(ev.file_name),
+                QtWidgets.QTableWidgetItem(fr.final_verdict or fr.ml_verdict),
+                QtWidgets.QTableWidgetItem(
+                    f"{fr.combined_prob*100:.1f}% ({fr.risk_level})" if fr.combined_prob is not None else "-"),
+                QtWidgets.QTableWidgetItem(
+                    f"{fr.lgbm_prob*100:.1f}%" if fr.lgbm_prob is not None else "-"),
+                QtWidgets.QTableWidgetItem(
+                    f"{fr.cnn_prob*100:.1f}%" if fr.cnn_prob is not None else "-"),
+                QtWidgets.QTableWidgetItem("Quarantined (XOR)" if ev.quarantined else "Allowed"),
+                QtWidgets.QTableWidgetItem(ev.sha256[:16] + "…"),
+            ]
+
+            items[1].setToolTip(str(Path(ev.path).parent))
+            items[2].setToolTip(ev.path)
+            items[8].setToolTip(ev.sha256)
+
+            items[3].setData(QtCore.Qt.ItemDataRole.UserRole + 1, fr.final_verdict or fr.ml_verdict)
+
+            p = theme.palette(self._mode)
+            if ev.quarantined:
+                items[7].setForeground(QtGui.QColor(p["danger"]))
+            else:
+                items[7].setForeground(QtGui.QColor(p["success"]))
+
+            for col, it in enumerate(items):
+                it.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable)
+                self.monitor_table.setItem(row, col, it)
 
         def _on_watcher_event_received(self, ev):
             from .orchestrator import FileResult
@@ -1193,11 +1564,26 @@ if HAVE_QT:
                 quarantined=ev.quarantined,
                 quarantine_path=ev.quarantine_path,
             )
+            # 1. Add to primary scan table & results
             self._results.append(fr)
             self._append_row(fr)
             self._update_result_count()
+
+            # 2. Add to Monitored Folders tab table
+            self._append_monitor_row(ev, fr)
+
+            # 3. Update monitor stat cards
+            self._mon_counts["scanned"] += 1
+            if ev.quarantined or ens.final_verdict == MALWARE:
+                self._mon_counts["threats"] += 1
+            else:
+                self._mon_counts["safe"] += 1
+            self.card_mon_scanned.set_value(self._mon_counts["scanned"], self._mode)
+            self.card_mon_threats.set_value(self._mon_counts["threats"], self._mode)
+            self.card_mon_safe.set_value(self._mon_counts["safe"], self._mode)
+
             self.status.showMessage(
-                f"Real-time scan: {ev.file_name} -> {ens.final_verdict} (Risk: {ens.combined_prob * 100:.1f}%)", 8000)
+                f"Real-time intercept: {ev.file_name} -> {ens.final_verdict} (Risk: {ens.combined_prob * 100:.1f}%)", 8000)
 
         # ── shutdown ─────────────────────────────────────────────────────────
         def closeEvent(self, event):

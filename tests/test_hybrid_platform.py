@@ -153,5 +153,81 @@ def test_gui_table_and_badges():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     w = gui.MainWindow()
     assert "Combined Risk" in w.COLUMNS
-    assert "ResNet-18 (Vision)" in w.COLUMNS
+    assert "ResNet-18" in w.MONITOR_COLUMNS
+    assert hasattr(w, "tabs")
+    assert hasattr(w, "watch_list")
     assert hasattr(w, "cb_watch")
+    w.close()
+
+
+def test_gui_monitored_folders_tab():
+    """Verify Monitored Folders tab, watchlist management, and event feed."""
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    from PySide6 import QtCore, QtWidgets
+    from avscan import gui
+    from avscan.ensemble import EnsembleResult
+    from avscan.watcher import WatcherEvent
+
+    class FakeWorker(QtCore.QThread):
+        done = QtCore.Signal(object)
+        def start(self): pass
+
+    gui.SelfCheckWorker = FakeWorker
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    w = gui.MainWindow()
+
+    # 1. Check tab widget exists and has 2 tabs
+    assert w.tabs.count() == 2
+    assert "Scan" in w.tabs.tabText(0)
+    assert "Monitored Folders" in w.tabs.tabText(1)
+
+    # 2. Check watchlist initialization
+    assert w.watch_list.count() >= 1
+
+    # 3. Test adding a folder programmatically
+    test_dir = tempfile.mkdtemp()
+    try:
+        item = QtWidgets.QListWidgetItem(f"📁  {test_dir}")
+        item.setData(QtCore.Qt.ItemDataRole.UserRole, str(test_dir))
+        w.watch_list.addItem(item)
+        assert w.watch_list.count() == 2
+        w.card_mon_folders.set_value(w.watch_list.count(), w._mode)
+        assert w.card_mon_folders.value.text() == "2"
+
+        # 4. Test simulated watcher interception event
+        ens = EnsembleResult(
+            lgbm_prob=0.92,
+            lgbm_verdict="MALWARE",
+            cnn_prob=0.88,
+            cnn_verdict="MALWARE",
+            combined_prob=0.90,
+            final_verdict="MALWARE",
+            risk_level="CRITICAL_THREAT",
+            models_disagree=False,
+        )
+        fake_event = WatcherEvent(
+            path=str(Path(test_dir) / "dropped_trojan.exe"),
+            file_name="dropped_trojan.exe",
+            sha256="cc" * 32,
+            ensemble_result=ens,
+            quarantined=True,
+            quarantine_path=None,
+        )
+        w._on_watcher_event_received(fake_event)
+
+        # 5. Intercepted event should appear in both tables
+        assert w.table.rowCount() == 1
+        assert w.table.item(0, 0).text() == "dropped_trojan.exe"
+        assert w.monitor_table.rowCount() == 1
+        assert w.monitor_table.item(0, 2).text() == "dropped_trojan.exe"
+        assert w.monitor_table.item(0, 3).text() == "MALWARE"
+        assert w.monitor_table.item(0, 7).text() == "Quarantined (XOR)"
+        assert w.card_mon_threats.value.text() == "1"
+
+        # 6. Test clear log
+        w._clear_monitor_log()
+        assert w.monitor_table.rowCount() == 0
+        assert w.card_mon_threats.value.text() == "0"
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
+        w.close()

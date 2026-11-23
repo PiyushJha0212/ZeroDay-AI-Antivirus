@@ -336,6 +336,59 @@ QScrollBar::handle:horizontal {{
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0px; width: 0px; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+QTabWidget::pane {{
+    border: 1px solid {p['border']};
+    border-radius: 10px;
+    background: {p['surface']};
+    top: -1px;
+}}
+QTabBar::tab {{
+    background: {p['surface_alt']};
+    color: {p['text_muted']};
+    border: 1px solid {p['border']};
+    border-bottom: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    padding: 9px 18px;
+    margin-right: 4px;
+    font-size: 13px;
+    font-weight: 500;
+}}
+QTabBar::tab:selected {{
+    background: {p['surface']};
+    color: {p['text']};
+    font-weight: 600;
+    border-color: {p['border']};
+    border-bottom: 2px solid {p['accent']};
+}}
+QTabBar::tab:hover:!selected {{
+    background: {p['bg']};
+    color: {p['text']};
+}}
+
+/* ── List Widget ───────────────────────────────────────────────────────── */
+QListWidget {{
+    background: {p['bg']};
+    border: 1px solid {p['border']};
+    border-radius: 8px;
+    padding: 6px;
+    outline: none;
+}}
+QListWidget::item {{
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: {p['text']};
+    margin-bottom: 2px;
+}}
+QListWidget::item:hover {{
+    background: {p['surface_alt']};
+}}
+QListWidget::item:selected {{
+    background: {p['selection']};
+    color: {p['text']};
+}}
+
 /* ── Misc ──────────────────────────────────────────────────────────────── */
 QStatusBar {{
     background: {p['surface']};

@@ -181,33 +181,83 @@ class DownloadWatcherHandler(FileSystemEventHandler):
 
 
 class EndpointWatcher:
-    """Manages the background directory monitor."""
+    """Manages real-time monitoring across one or more directories."""
 
     def __init__(
         self,
+        watch_dirs: list[Path | str] | Path | str | None = None,
         watch_dir: Path | str | None = None,
         event_callback: Callable[[WatcherEvent], None] | None = None,
     ):
-        self.watch_dir = Path(watch_dir) if watch_dir else (Path.home() / "Downloads")
+        target = watch_dir if watch_dir is not None else watch_dirs
+        if target is None:
+            self.watch_dirs: list[Path] = [Path.home() / "Downloads"]
+        elif isinstance(target, (list, tuple, set)):
+            self.watch_dirs = [Path(p) for p in target]
+        else:
+            self.watch_dirs = [Path(target)]
+
         self.event_callback = event_callback
         self.observer: Observer | None = None
         self.handler: DownloadWatcherHandler | None = None
+        self._watches: dict[str, any] = {}
         self._is_running = False
+
+    @property
+    def watch_dir(self) -> Path:
+        # Backwards compatibility accessor
+        return self.watch_dirs[0] if self.watch_dirs else (Path.home() / "Downloads")
 
     def start(self) -> bool:
         if self._is_running:
             return True
-        if not self.watch_dir.exists():
-            try:
-                self.watch_dir.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                return False
 
         self.handler = DownloadWatcherHandler(event_callback=self.event_callback)
         self.observer = Observer()
-        self.observer.schedule(self.handler, str(self.watch_dir), recursive=False)
-        self.observer.start()
-        self._is_running = True
+        self._watches.clear()
+
+        started_any = False
+        for p in list(self.watch_dirs):
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+                w = self.observer.schedule(self.handler, str(p), recursive=False)
+                self._watches[str(p)] = w
+                started_any = True
+            except OSError:
+                pass
+
+        if started_any:
+            self.observer.start()
+            self._is_running = True
+            return True
+        return False
+
+    def add_watch_dir(self, folder: Path | str) -> bool:
+        p = Path(folder).resolve()
+        if p not in self.watch_dirs:
+            self.watch_dirs.append(p)
+        if self._is_running and self.observer and self.handler:
+            if str(p) not in self._watches:
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                    w = self.observer.schedule(self.handler, str(p), recursive=False)
+                    self._watches[str(p)] = w
+                    return True
+                except OSError:
+                    return False
+        return True
+
+    def remove_watch_dir(self, folder: Path | str) -> bool:
+        p = Path(folder).resolve()
+        for d in list(self.watch_dirs):
+            if d.resolve() == p:
+                self.watch_dirs.remove(d)
+        if str(p) in self._watches and self.observer:
+            try:
+                self.observer.unschedule(self._watches[str(p)])
+            except Exception:
+                pass
+            del self._watches[str(p)]
         return True
 
     def stop(self) -> None:
@@ -215,6 +265,7 @@ class EndpointWatcher:
             self.observer.stop()
             self.observer.join(timeout=2)
             self._is_running = False
+            self._watches.clear()
 
     @property
     def is_running(self) -> bool:

@@ -84,7 +84,7 @@ flowchart TD
 | **Dual AI Perspective** | LightGBM + ResNet-18 soft-voting | Prevents evasion: packed files that fool static parsers still exhibit obvious entropy noise textures under CNN vision. |
 | **The "Pixel Trick"** | Byte array $\rightarrow$ 2D matrix $\rightarrow$ 256×256 grayscale image | Visualizes code sections, resource blocks, and encrypted payloads as spatial textures without disassembly. |
 | **Shannon Entropy** | $H(X) = -\sum P(x) \log_2 P(x)$ | Differentiates plain assembly code ($\approx 4.5$) from packed/encrypted malware payloads ($\ge 7.2$). |
-| **Real-Time Downloads Watcher** | OS-level `watchdog` monitoring with lock detection | Automatically scans newly saved downloads in the background and delivers native Windows alerts. |
+| **Real-Time Multi-Folder Watcher** | OS-level `watchdog` monitoring with dedicated UI tab | Real-time monitoring across Downloads and custom user-selected folders with live interception feed, lock detection, and toast alerts. |
 | **XOR Quarantine** | Symmetric XOR transformation with SHA-256 verification | Safely neutralizes malicious binaries so they cannot execute, with exact byte-for-byte 1-click restoration. |
 | **SHAP Explainability (XAI)** | Shapley additive feature attribution | Transforms black-box scores into an auditable checklist of what triggered the verdict (e.g. `VirtualAllocEx` imports). |
 | **Authenticode Defense** | Win32 `WinVerifyTrust` offline certificate validation | Prevents false alarms on signed Microsoft/Google installers without modifying the underlying ML verdict. |
