@@ -8,7 +8,8 @@
 ![PyTorch](https://img.shields.io/badge/Model%201-ResNet--18%20(PyTorch)-EE4C2C?logo=pytorch&logoColor=white)
 ![LightGBM](https://img.shields.io/badge/Model%202-LightGBM%20(Static%20PE)-9ACD32)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)
-![GUI](https://img.shields.io/badge/GUI-PySide6%20(Qt)-41CD52?logo=qt&logoColor=white)
+![UI](https://img.shields.io/badge/UI-Apple--Inspired%20Minimalism-000000?logo=apple&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-100%20Passed-30D158?logo=pytest&logoColor=white)
 ![Offline](https://img.shields.io/badge/Detection-100%25%20Offline-555)
 
 <p align="center">
@@ -18,10 +19,10 @@
 </p>
 
 **Team**:
-- **Piyush** — *Team Lead & System Architect*
-- **Komal Dumka** — *Static ML & Feature Engineering Lead*
-- **Vighnesh Chaudhary** — *Deep Learning & Computer Vision Specialist*
-- **Jay Sharma** — *Security Operations, XAI & System Scanner Lead*
+- **Piyush** (URN: 2361392) — *Team Lead & System Architect*
+- **Komal Dumka** (URN: 2361275) — *Static ML & Feature Engineering Lead*
+- **Vighnesh Chaudhary** (URN: 2361579) — *Deep Learning & Computer Vision Specialist*
+- **Jay Sharma** (URN: 2361226) — *Security Operations, XAI & System Scanner Lead*
 
 </div>
 
@@ -35,7 +36,9 @@ Traditional antivirus systems depend heavily on static cryptographic hash matchi
 1. **Static Feature Analysis (LightGBM)**: Extracts 2,381 structural properties from Windows Portable Executable (PE) headers, section layouts, import address tables (IAT), and byte-level Shannon Entropy.
 2. **Deep Learning Binary Vision (ResNet-18 2D-CNN)**: Exploits the *"Pixel Trick"* by reshaping raw uncompiled binary bytes into 256×256 2D grayscale matrices to extract spatial texture patterns and structural code signatures.
 3. **Soft-Voting Ensemble Engine**: Fuses independent probabilities into a unified confidence score ($P$), escalating uncertain files or model disagreements to a **Grey Zone (`SUSPICIOUS`)**.
-4. **Real-Time Endpoint Watchdog**: Intercepts newly downloaded files in background via `watchdog`, dispatches Windows native toast notifications, and auto-quarantines threats ($P \ge 0.85$).
+4. **Targeted File & Folder Scanning**: Supports instant single-file deep scans (`.exe`, `.dll`, `.sys`, `.scr`, etc.) as well as recursive directory walks.
+5. **Real-Time Endpoint Watchdog**: Intercepts newly downloaded or dropped files across designated folders via OS-level events, dispatches native Windows toast notifications, and auto-quarantines threats ($P \ge 0.85$).
+6. **Apple-Inspired Minimalist UI**: Built with PySide6 and styled with quiet, restrained aesthetics, intentional whitespace, WCAG AA dark/light palettes, and segmented control navigation.
 
 ---
 
@@ -43,7 +46,8 @@ Traditional antivirus systems depend heavily on static cryptographic hash matchi
 
 ```mermaid
 flowchart TD
-    File["Target Executable (.exe, .dll, .sys)"] --> Hash["SHA-256 Baseline & Cache Check"]
+    File["Target File (.exe, .dll) or Folder"] --> Discovery["Discovery & Whitelist Engine"]
+    Discovery --> Hash["SHA-256 Baseline & Cache Check"]
     Hash --> Split{"Dual-Engine AI Inference"}
     
     subgraph Engine1["Model 1: Static Structural Engine"]
@@ -71,8 +75,8 @@ flowchart TD
     
     Malware -- "P >= 0.85" --> AutoQ["Automated XOR Quarantine"]
     Decision --> AuthCheck["Authenticode Signature Verifier"]
-    Decision --> XAI["SHAP XAI Explanation Layer"]
-    Decision --> UI["PySide6 Desktop Application"]
+    Decision --> XAI["SHAP & Gemini Explanation Layer"]
+    Decision --> UI["Apple-Minimalist PySide6 GUI"]
 ```
 
 ---
@@ -84,10 +88,22 @@ flowchart TD
 | **Dual AI Perspective** | LightGBM + ResNet-18 soft-voting | Prevents evasion: packed files that fool static parsers still exhibit obvious entropy noise textures under CNN vision. |
 | **The "Pixel Trick"** | Byte array $\rightarrow$ 2D matrix $\rightarrow$ 256×256 grayscale image | Visualizes code sections, resource blocks, and encrypted payloads as spatial textures without disassembly. |
 | **Shannon Entropy** | $H(X) = -\sum P(x) \log_2 P(x)$ | Differentiates plain assembly code ($\approx 4.5$) from packed/encrypted malware payloads ($\ge 7.2$). |
-| **Real-Time Multi-Folder Watcher** | OS-level `watchdog` monitoring with dedicated UI tab | Real-time monitoring across Downloads and custom user-selected folders with live interception feed, lock detection, and toast alerts. |
+| **Targeted File & Folder Scans** | Dedicated `📄 Select File` & `📁 Select Folder` buttons + CLI | Scan individual suspicious executables directly or perform full recursive directory audits. |
+| **Apple-Inspired Design** | Minimalist aesthetic, WCAG AA palettes, segmented tabs | Eliminates messy gradients and AI bloat; provides quiet confidence, high readability, and fluid interaction. |
+| **Real-Time Multi-Folder Watcher** | OS-level `watchdog` monitoring with dedicated UI tab | Intercepts downloads and dropped binaries in real-time across multiple custom directories with native Windows toast alerts. |
 | **XOR Quarantine** | Symmetric XOR transformation with SHA-256 verification | Safely neutralizes malicious binaries so they cannot execute, with exact byte-for-byte 1-click restoration. |
 | **SHAP Explainability (XAI)** | Shapley additive feature attribution | Transforms black-box scores into an auditable checklist of what triggered the verdict (e.g. `VirtualAllocEx` imports). |
 | **Authenticode Defense** | Win32 `WinVerifyTrust` offline certificate validation | Prevents false alarms on signed Microsoft/Google installers without modifying the underlying ML verdict. |
+
+---
+
+## 🎨 User Interface & Experience
+
+The application is engineered with an **Apple-inspired design philosophy**:
+- **Design Restraint**: No unnecessary cards, floating glassmorphism, or cartoonish glowing blobs.
+- **Color Discipline**: Neutral palettes (obsidian `#09090b` in dark mode, porcelain `#f5f5f7` in light mode) with high-contrast text and color strictly reserved for security verdicts.
+- **Segmented Controls**: Sleek pill-style navigation tabs for **`🛡️ Scan & Analysis`** and **`👁️ Monitored Folders`**.
+- **Refined Data Presentation**: Clean, borderless tables with generous 36px row spacing, hairline dividers, and custom rounded verdict badges.
 
 ---
 
@@ -138,19 +154,19 @@ python -m avscan.gui
 ### 2. Stop Application & Background Monitors
 Double-click **`stop.bat`** to cleanly terminate the interface and any active download listeners.
 
-### 3. Run End-to-End Validation Tests
-Run the test suite to verify all engines:
+### 3. Run Automated Validation Test Suite
+Verify all hybrid platform components, themes, and UI logic (100 passing tests):
 ```powershell
-pytest tests/test_hybrid_platform.py -v
+pytest tests/test_hybrid_platform.py tests/avscan_tests/test_theme.py tests/avscan_tests/test_gui.py -v
 ```
 
 ---
 
 ## 🛡️ Quarantine & Safe Restoration
-Flagged threats are safely locked inside `quarantine/`:
+Flagged threats are safely neutralized inside `quarantine/`:
 1. File bytes are XOR-scrambled so Windows cannot execute them.
 2. File is renamed with a `.quarantine` extension.
-3. Restoring via the GUI instantly verifies the SHA-256 hash and places the file back in its original path.
+3. Restoring via the GUI instantly verifies the SHA-256 hash and places the file back in its original path with 1 click.
 
 ---
 
