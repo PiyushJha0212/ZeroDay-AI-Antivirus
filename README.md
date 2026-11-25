@@ -162,6 +162,27 @@ pytest tests/test_hybrid_platform.py tests/avscan_tests/test_theme.py tests/avsc
 
 ---
 
+## 🧪 Examiner Demonstration & Showcase Samples
+
+The repository includes a ready-to-use showcase folder: **`Examiner_Test_Showcase/`** specifically curated for practical examiner evaluations and viva demonstrations.
+
+### Quick Start Demo
+Double-click **`Examiner_Test_Showcase/START_DEMO.bat`** to immediately launch the application pointed at the test suite.
+
+### How to Access and Test Each Sample Category
+
+| Folder / Category | Included Test Files | Expected Outcome | What to Show the Examiner |
+| :--- | :--- | :--- | :--- |
+| **`01_Clean_Benign_Samples/`** | `clean_system_tool.exe`<br/>`signed_windows_explorer.exe` | **`SAFE`**<br/>**`SIGNED`** | Click **`📄 Select File`** to show zero-alarm clean execution and offline Win32 **Authenticode certificate validation** (`WinVerifyTrust`). |
+| **`02_Suspicious_Grey_Zone/`** | `boundary_heuristic_sample.exe` | **`SUSPICIOUS`** | Click **`📄 Select File`** to demonstrate **Grey-Zone Escalation** when confidence falls into the calibrated boundary ($0.40 \le P < 0.75$). |
+| **`03_Malicious_Threat_Samples/`** | `simulated_zeroday_trojan.exe`<br/>`synthetic_high_entropy_ransomware.exe`<br/>`obfuscated_backdoor_macro.scr` | **`MALWARE`** (Risk ~88%) | Select with **`Auto-quarantine malware`** enabled to show both models detecting zero-day threats, triggering **Automated XOR Quarantine** ($P \ge 0.85$). |
+| **`04_Edge_Cases_And_Corrupt/`** | `tiny_stub_under_100b.exe`<br/>`corrupted_pe_header.exe`<br/>`ignored_safe_document.txt` | **`ERROR`**<br/>**`MALWARE`**<br/>*(Skipped)* | Proves **Fail-Closed Security** on corrupt headers or binaries under 100 bytes, while safely ignoring non-PE files like `.txt`. |
+| **`05_Nested_Folder_Recursive_Scan/`** | `level1/clean_sub_worker.exe`<br/>`level1/level2/nested_threat_payload.exe` | **`SAFE`** / **`MALWARE`** | Click **`📁 Select Folder`** on `Examiner_Test_Showcase` to demonstrate full multi-level recursive tree scanning across subdirectories. |
+
+> 📖 **Full Viva Guide**: A detailed 5-minute examiner walkthrough script is included at [`Examiner_Test_Showcase/README_EXAMINER_DEMO.md`](Examiner_Test_Showcase/README_EXAMINER_DEMO.md).
+
+---
+
 ## 🛡️ Quarantine & Safe Restoration
 Flagged threats are safely neutralized inside `quarantine/`:
 1. File bytes are XOR-scrambled so Windows cannot execute them.
