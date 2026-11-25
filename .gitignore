@@ -44,13 +44,15 @@ build/
 *.dat
 *.npy
 *.jsonl
-*.pth
+# Allow the ResNet-18 malware vision weights
+!models/v7/resnet18_malware.pth
 
 # ---- Models: exclude everything EXCEPT the single relevant model + its config
 models/*
 !models/v7/
 models/v7/*
 !models/v7/lgbm_v7_correct.pkl
+!models/v7/resnet18_malware.pth
 !models/v7/thresholds.json
 !models/v7/if_config.json
 
