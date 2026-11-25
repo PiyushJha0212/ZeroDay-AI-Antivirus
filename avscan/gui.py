@@ -331,8 +331,8 @@ if HAVE_QT:
             self.setObjectName("Card")
             self.accent_key = accent_key
             lay = QtWidgets.QVBoxLayout(self)
-            lay.setContentsMargins(14, 10, 14, 10)
-            lay.setSpacing(0)
+            lay.setContentsMargins(18, 14, 18, 14)
+            lay.setSpacing(2)
             self.value = QtWidgets.QLabel("—")
             self.value.setObjectName("StatValue")
             self.caption = QtWidgets.QLabel(label.upper())
@@ -632,14 +632,14 @@ if HAVE_QT:
             bar = QtWidgets.QFrame()
             bar.setObjectName("HeaderBar")
             lay = QtWidgets.QHBoxLayout(bar)
-            lay.setContentsMargins(18, 12, 18, 12)
-            lay.setSpacing(12)
+            lay.setContentsMargins(20, 13, 20, 13)
+            lay.setSpacing(14)
 
             title_box = QtWidgets.QVBoxLayout()
-            title_box.setSpacing(1)
-            title = QtWidgets.QLabel("🛡  AntivirusAI V7")
+            title_box.setSpacing(2)
+            title = QtWidgets.QLabel("🛡  AntivirusAI")
             title.setObjectName("AppTitle")
-            sub = QtWidgets.QLabel("Machine-learning PE malware detection")
+            sub = QtWidgets.QLabel("Dual-Engine Zero-Day Intelligence · LightGBM & ResNet-18 Vision")
             sub.setObjectName("AppSubtitle")
             title_box.addWidget(title)
             title_box.addWidget(sub)
@@ -662,28 +662,47 @@ if HAVE_QT:
             card = QtWidgets.QFrame()
             card.setObjectName("Card")
             lay = QtWidgets.QVBoxLayout(card)
-            lay.setContentsMargins(16, 14, 16, 14)
-            lay.setSpacing(11)
+            lay.setContentsMargins(18, 16, 18, 16)
+            lay.setSpacing(12)
 
-            heading = QtWidgets.QLabel("SCAN TARGET")
+            heading_box = QtWidgets.QHBoxLayout()
+            heading = QtWidgets.QLabel("SCAN TARGET & NEURAL ANALYSIS")
             heading.setObjectName("SectionLabel")
-            lay.addWidget(heading)
+            heading_box.addWidget(heading)
+            heading_box.addStretch(1)
+            target_badge = QtWidgets.QLabel("FILES & DIRECTORIES")
+            target_badge.setObjectName("SectionLabel")
+            heading_box.addWidget(target_badge)
+            lay.addLayout(heading_box)
 
             row = QtWidgets.QHBoxLayout()
-            row.setSpacing(9)
+            row.setSpacing(8)
             self.path_edit = QtWidgets.QLineEdit()
-            self.path_edit.setPlaceholderText("Choose a folder to scan…")
+            self.path_edit.setPlaceholderText("Select a file or folder to analyze, or enter path…")
             self.path_edit.setClearButtonEnabled(True)
-            browse = QtWidgets.QPushButton("Browse")
-            browse.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-            browse.clicked.connect(self._browse)
+
+            self.btn_browse_file = QtWidgets.QPushButton("📄  Select File")
+            self.btn_browse_file.setToolTip("Select an individual executable or PE file to scan")
+            self.btn_browse_file.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_browse_file.clicked.connect(self._browse_file)
+
+            self.btn_browse_folder = QtWidgets.QPushButton("📁  Select Folder")
+            self.btn_browse_folder.setToolTip("Select a folder to recursively scan")
+            self.btn_browse_folder.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self.btn_browse_folder.clicked.connect(self._browse_folder)
+
+            # Maintain alias for compatibility
+            self.browse_btn = self.btn_browse_folder
+
             self.scan_btn = QtWidgets.QPushButton("Scan")
             self.scan_btn.setObjectName("Primary")
             self.scan_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             self.scan_btn.clicked.connect(self._start_scan)
             self.scan_btn.setEnabled(False)
+
             row.addWidget(self.path_edit, 1)
-            row.addWidget(browse)
+            row.addWidget(self.btn_browse_file)
+            row.addWidget(self.btn_browse_folder)
             row.addWidget(self.scan_btn)
             lay.addLayout(row)
 
@@ -991,14 +1010,26 @@ if HAVE_QT:
 
         # ── scan flow ────────────────────────────────────────────────────────
         def _browse(self):
+            self._browse_folder()
+
+        def _browse_file(self):
+            fn, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Select file to scan",
+                filter="Executable & PE Files (*.exe *.dll *.sys *.scr *.com *.ocx *.cpl *.drv);;All Files (*.*)"
+            )
+            if fn:
+                self.path_edit.setText(fn)
+
+        def _browse_folder(self):
             d = QtWidgets.QFileDialog.getExistingDirectory(self, "Select folder to scan")
             if d:
                 self.path_edit.setText(d)
 
         def _start_scan(self):
             folder = self.path_edit.text().strip()
-            if not folder or not os.path.isdir(folder):
-                QtWidgets.QMessageBox.warning(self, "No folder", "Choose a valid folder.")
+            if not folder or not os.path.exists(folder):
+                QtWidgets.QMessageBox.warning(self, "No target", "Choose a valid file or folder to scan.")
                 return
             if not self._selfcheck_ok:
                 QtWidgets.QMessageBox.critical(self, "Blocked", "Self-check failed.")

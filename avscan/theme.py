@@ -14,55 +14,52 @@ ratios rather than trusting the eye.
 from __future__ import annotations
 
 DARK = {
-    "bg":           "#0d1117",
-    "surface":      "#161b22",
-    "surface_alt":  "#1c2128",
-    "border":       "#30363d",
-    "border_soft":  "#21262d",
-    "text":         "#e6edf3",
-    "text_muted":   "#9198a1",
-    # Two blues, because one cannot do both jobs at AA: `accent` is bright
-    # enough to read as TEXT on the dark background, `accent_solid` is dark
-    # enough that white BUTTON text passes on top of it. Verified in
-    # test_theme.py — a single blue fails one side or the other.
-    "accent":              "#58a6ff",
-    "accent_solid":        "#1a68e0",
-    "accent_solid_hover":  "#175fd0",
+    "bg":           "#09090b",
+    "surface":      "#141417",
+    "surface_alt":  "#1c1c20",
+    "border":       "#27272a",
+    "border_soft":  "#1e1e22",
+    "text":         "#f4f4f6",
+    "text_muted":   "#8e8e93",
+    # Apple System Blue tokens: `accent` for high-contrast text on dark backgrounds;
+    # `accent_solid` for button fills that clear WCAG AA with white text.
+    "accent":              "#3898ec",
+    "accent_solid":        "#1868e4",
+    "accent_solid_hover":  "#1458c8",
     "accent_text":         "#ffffff",
     "danger":       "#ff6b63",
-    "danger_bg":    "#3d1d1f",
-    "warn":         "#e3b341",
-    "warn_bg":      "#3a2d12",
-    "success":      "#4ac364",
-    "success_bg":   "#12341d",
-    "neutral":      "#9198a1",
-    "neutral_bg":   "#21262d",
-    "selection":    "#1f3a5f",
+    "danger_bg":    "#381618",
+    "warn":         "#e5b842",
+    "warn_bg":      "#332408",
+    "success":      "#4cd964",
+    "success_bg":   "#122e1b",
+    "neutral":      "#8e8e93",
+    "neutral_bg":   "#1c1c1f",
+    "selection":    "#1a2e46",
 }
 
 LIGHT = {
-    "bg":           "#f6f8fa",
+    "bg":           "#f5f5f7",
     "surface":      "#ffffff",
-    "surface_alt":  "#f6f8fa",
-    "border":       "#d0d7de",
-    "border_soft":  "#e4e8ed",
-    "text":         "#1f2328",
-    "text_muted":   "#5a626c",
-    # In light mode one blue clears both bars, but the keys stay split so the
-    # stylesheet reads identically for both themes.
-    "accent":              "#0969da",
-    "accent_solid":        "#0969da",
-    "accent_solid_hover":  "#0860ca",
+    "surface_alt":  "#fafafc",
+    "border":       "#d2d2d7",
+    "border_soft":  "#e5e5ea",
+    "text":         "#1d1d1f",
+    "text_muted":   "#555a62",
+    # Light theme tokens tuned for Apple minimalist paper-white elevation.
+    "accent":              "#0062cc",
+    "accent_solid":        "#0062cc",
+    "accent_solid_hover":  "#0052ad",
     "accent_text":         "#ffffff",
     "danger":       "#cf222e",
-    "danger_bg":    "#ffebe9",
-    "warn":         "#8a6100",
-    "warn_bg":      "#fff8c5",
+    "danger_bg":    "#ffebee",
+    "warn":         "#8a5c00",
+    "warn_bg":      "#fff8e6",
     "success":      "#1a7f37",
-    "success_bg":   "#dafbe1",
-    "neutral":      "#5a626c",
-    "neutral_bg":   "#eaeef2",
-    "selection":    "#ddf4ff",
+    "success_bg":   "#e6f9ed",
+    "neutral":      "#555a62",
+    "neutral_bg":   "#e5e5ea",
+    "selection":    "#e5f1ff",
 }
 
 PALETTES = {"dark": DARK, "light": LIGHT}
@@ -159,13 +156,13 @@ def contrast_ratio(fg: str, bg: str) -> float:
 
 # ── Qt stylesheet ───────────────────────────────────────────────────────────
 def stylesheet(mode: str = DEFAULT_MODE) -> str:
-    """Full application QSS for the given palette."""
+    """Full application QSS for the given palette with Apple-inspired minimalism."""
     p = palette(mode)
     return f"""
 QWidget {{
     background: {p['bg']};
     color: {p['text']};
-    font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+    font-family: "-apple-system", "SF Pro Text", "SF Pro Display", "Segoe UI", "Inter", system-ui, sans-serif;
     font-size: 13px;
 }}
 
@@ -173,11 +170,11 @@ QWidget {{
    punches a dark rectangle through it. */
 QLabel {{ background: transparent; }}
 
-/* ── Cards ─────────────────────────────────────────────────────────────── */
+/* ── Cards & Structure ─────────────────────────────────────────────────── */
 QFrame#Card {{
     background: {p['surface']};
     border: 1px solid {p['border']};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QFrame#HeaderBar {{
     background: {p['surface']};
@@ -189,28 +186,40 @@ QLabel#AppTitle {{
     font-size: 17px;
     font-weight: 600;
     color: {p['text']};
+    letter-spacing: -0.2px;
 }}
-QLabel#AppSubtitle  {{ color: {p['text_muted']}; font-size: 11px; }}
-QLabel#SectionLabel {{
+QLabel#AppSubtitle  {{
     color: {p['text_muted']};
     font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.2px;
 }}
-QLabel#StatValue {{ font-size: 26px; font-weight: 600; }}
+QLabel#SectionLabel {{
+    color: {p['text_muted']};
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+}}
+QLabel#StatValue {{
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+}}
 QLabel#StatLabel {{
     color: {p['text_muted']};
     font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.7px;
 }}
 QLabel#StatSub {{
     color: {p['text_muted']};
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 400;
     margin-top: 2px;
 }}
-QLabel#CurrentFile {{ color: {p['text_muted']}; font-size: 11px; }}
+QLabel#CurrentFile {{
+    color: {p['text_muted']};
+    font-size: 11px;
+}}
 
 /* ── Inputs ────────────────────────────────────────────────────────────── */
 QLineEdit {{
@@ -220,16 +229,18 @@ QLineEdit {{
     padding: 9px 12px;
     selection-background-color: {p['selection']};
 }}
-QLineEdit:focus  {{ border: 1px solid {p['accent']}; }}
+QLineEdit:focus  {{
+    border: 1px solid {p['accent']};
+}}
 QComboBox {{
     background: {p['surface_alt']};
     border: 1px solid {p['border']};
     border-radius: 8px;
-    padding: 6px 10px;
+    padding: 6px 12px;
     min-width: 130px;
 }}
 QComboBox:hover      {{ border: 1px solid {p['accent']}; }}
-QComboBox::drop-down {{ border: none; width: 18px; }}
+QComboBox::drop-down {{ border: none; width: 20px; }}
 QComboBox QAbstractItemView {{
     background: {p['surface']};
     border: 1px solid {p['border']};
@@ -242,17 +253,25 @@ QPushButton {{
     background: {p['surface_alt']};
     border: 1px solid {p['border']};
     border-radius: 8px;
-    padding: 8px 14px;
+    padding: 7px 14px;
     font-weight: 500;
+    font-size: 12px;
 }}
-QPushButton:hover    {{ border: 1px solid {p['accent']}; }}
-QPushButton:disabled {{ color: {p['text_muted']}; border: 1px solid {p['border_soft']}; }}
+QPushButton:hover    {{
+    border: 1px solid {p['accent']};
+    background: {p['surface']};
+}}
+QPushButton:disabled {{
+    color: {p['text_muted']};
+    border: 1px solid {p['border_soft']};
+}}
 QPushButton#Primary {{
     background: {p['accent_solid']};
     color: {p['accent_text']};
     border: 1px solid {p['accent_solid']};
     font-weight: 600;
-    padding: 9px 22px;
+    padding: 8px 22px;
+    font-size: 13px;
 }}
 QPushButton#Primary:hover {{
     background: {p['accent_solid_hover']};
@@ -263,8 +282,13 @@ QPushButton#Primary:disabled {{
     color: {p['text_muted']};
     border: 1px solid {p['border']};
 }}
-QPushButton#Danger {{ color: {p['warn']}; border: 1px solid {p['warn']}; }}
-QPushButton#Danger:hover {{ background: {p['warn_bg']}; }}
+QPushButton#Danger {{
+    color: {p['warn']};
+    border: 1px solid {p['warn']};
+}}
+QPushButton#Danger:hover {{
+    background: {p['warn_bg']};
+}}
 QPushButton#IconButton {{
     padding: 6px 10px;
     border-radius: 8px;
@@ -272,9 +296,13 @@ QPushButton#IconButton {{
 }}
 
 /* ── Toggles ───────────────────────────────────────────────────────────── */
-QCheckBox {{ spacing: 8px; padding: 3px 0px; }}
+QCheckBox {{
+    spacing: 8px;
+    padding: 3px 0px;
+}}
 QCheckBox::indicator {{
-    width: 16px; height: 16px;
+    width: 16px;
+    height: 16px;
     border-radius: 5px;
     border: 1px solid {p['border']};
     background: {p['bg']};
@@ -283,63 +311,90 @@ QCheckBox::indicator:checked {{
     background: {p['accent']};
     border: 1px solid {p['accent']};
 }}
-QCheckBox::indicator:hover {{ border: 1px solid {p['accent']}; }}
+QCheckBox::indicator:hover {{
+    border: 1px solid {p['accent']};
+}}
 
 /* ── Table ─────────────────────────────────────────────────────────────── */
 QTableWidget {{
     background: {p['surface']};
     border: 1px solid {p['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     gridline-color: transparent;
     outline: none;
 }}
 QTableWidget::item {{
-    padding: 7px 10px;
+    padding: 8px 12px;
     border-bottom: 1px solid {p['border_soft']};
 }}
-QTableWidget::item:selected {{ background: {p['selection']}; color: {p['text']}; }}
+QTableWidget::item:selected {{
+    background: {p['selection']};
+    color: {p['text']};
+}}
 QHeaderView::section {{
     background: {p['surface_alt']};
     color: {p['text_muted']};
     border: none;
-    border-bottom: 1px solid {p['border']};
-    padding: 9px 10px;
+    border-bottom: 1px solid {p['border_soft']};
+    padding: 9px 12px;
     font-size: 11px;
     font-weight: 600;
+    letter-spacing: 0.5px;
 }}
-QTableCornerButton::section {{ background: {p['surface_alt']}; border: none; }}
+QTableCornerButton::section {{
+    background: {p['surface_alt']};
+    border: none;
+}}
 
 /* ── Progress ──────────────────────────────────────────────────────────── */
 QProgressBar {{
     background: {p['neutral_bg']};
     border: none;
-    border-radius: 4px;
-    height: 6px;
+    border-radius: 3px;
+    height: 5px;
     text-align: center;
 }}
-QProgressBar::chunk {{ background: {p['accent']}; border-radius: 4px; }}
+QProgressBar::chunk {{
+    background: {p['accent']};
+    border-radius: 3px;
+}}
 
 /* ── Scrollbars ────────────────────────────────────────────────────────── */
 QScrollBar:vertical {{
-    background: transparent; width: 10px; margin: 4px 2px 4px 0px;
+    background: transparent;
+    width: 8px;
+    margin: 4px 2px 4px 0px;
 }}
 QScrollBar::handle:vertical {{
-    background: {p['border']}; border-radius: 5px; min-height: 30px;
+    background: {p['border']};
+    border-radius: 4px;
+    min-height: 28px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {p['text_muted']}; }}
+QScrollBar::handle:vertical:hover {{
+    background: {p['text_muted']};
+}}
 QScrollBar:horizontal {{
-    background: transparent; height: 10px; margin: 0px 4px 2px 4px;
+    background: transparent;
+    height: 8px;
+    margin: 0px 4px 2px 4px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {p['border']}; border-radius: 5px; min-width: 30px;
+    background: {p['border']};
+    border-radius: 4px;
+    min-width: 28px;
 }}
-QScrollBar::add-line, QScrollBar::sub-line {{ height: 0px; width: 0px; }}
-QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QScrollBar::add-line, QScrollBar::sub-line {{
+    height: 0px;
+    width: 0px;
+}}
+QScrollBar::add-page, QScrollBar::sub-page {{
+    background: transparent;
+}}
 
-/* ── Tabs ──────────────────────────────────────────────────────────────── */
+/* ── Segmented Tabs ────────────────────────────────────────────────────── */
 QTabWidget::pane {{
     border: 1px solid {p['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     background: {p['surface']};
     top: -1px;
 }}
@@ -350,7 +405,7 @@ QTabBar::tab {{
     border-bottom: none;
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
-    padding: 9px 18px;
+    padding: 8px 18px;
     margin-right: 4px;
     font-size: 13px;
     font-weight: 500;

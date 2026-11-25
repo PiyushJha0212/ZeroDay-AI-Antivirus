@@ -231,3 +231,21 @@ def test_gui_monitored_folders_tab():
     finally:
         shutil.rmtree(test_dir, ignore_errors=True)
         w.close()
+
+
+def test_orchestrator_single_file_scan():
+    from avscan.orchestrator import scan_file, scan_folder
+    with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as f:
+        f.write(b"MZ\x90\x00" + b"\x00" * 300)
+        tmp_path = f.name
+    try:
+        # Scan single file via scan_file
+        res = scan_file(tmp_path, hash_compare=False)
+        assert res.summary.total_files_seen == 1
+        assert res.summary.scanned == 1
+        assert len(res.results) == 1
+        assert res.results[0].name == os.path.basename(tmp_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+

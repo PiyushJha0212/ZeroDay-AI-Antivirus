@@ -115,12 +115,18 @@ def is_whitelisted(path: str, normalized_prefixes: list[str]) -> bool:
 def iter_candidate_files(folder: Path, on_walk_error: Callable | None = None):
     """Yield files under `folder` whose suffix is in VALID_EXT.
 
+    If `folder` is an explicit single file, yields it directly so single-file
+    scans can evaluate any targeted executable/PE file.
     Uses os.walk with an error handler so unreadable directories (permission
     denied, etc.) are skipped rather than aborting the whole walk.
     """
     def _onerror(err):
         if on_walk_error:
             on_walk_error(err)
+
+    if folder.is_file():
+        yield folder
+        return
 
     for dirpath, _dirnames, filenames in os.walk(folder, onerror=_onerror):
         for fn in filenames:
@@ -225,8 +231,8 @@ def scan_folder(
         if progress_cb:
             progress_cb(i, total, fp)
 
-        # Whitelist filtering (never sent to the engine).
-        if whitelist_enabled and is_whitelisted(str(fp), prefixes):
+        # Whitelist filtering (never sent to the engine when walking folders).
+        if whitelist_enabled and not folder.is_file() and is_whitelisted(str(fp), prefixes):
             summary.skipped_system += 1
             continue
 
@@ -353,3 +359,13 @@ def _headline(results: list[FileResult], zeroday_hashes: set[str]) -> dict:
         "ml_zeroday_detection_rate": round(caught_ml / n, 4) if n else 0.0,
         "hash_zeroday_detection_rate": round(caught_hash / n, 4) if n else 0.0,
     }
+
+
+def scan_file(file_path, **kwargs) -> ScanResult:
+    """Scan an individual file and return a ScanResult.
+
+    Convenience wrapper around scan_folder() providing dedicated single-file
+    targeted scanning.
+    """
+    return scan_folder(file_path, **kwargs)
+

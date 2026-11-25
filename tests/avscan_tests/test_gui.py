@@ -823,3 +823,37 @@ def test_raw_vector_button_disabled_when_no_vector(win):
     buttons = [b for b in dlg.findChildren(QtWidgets.QPushButton)]
     raw_btn = next(b for b in buttons if "גולמיים" in b.text())
     assert raw_btn.isEnabled() is False
+
+
+def test_window_has_file_and_folder_browse_buttons(win):
+    assert hasattr(win, "btn_browse_file")
+    assert hasattr(win, "btn_browse_folder")
+    assert "File" in win.btn_browse_file.text()
+    assert "Folder" in win.btn_browse_folder.text()
+
+
+def test_scan_initiates_on_single_file(win, monkeypatch):
+    with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as f:
+        f.write(b"MZ\x90\x00" + b"\x00" * 200)
+        tmp_path = f.name
+    try:
+        # Mock ScanWorker to prevent background thread execution during unit test
+        class DummyWorker(QtCore.QThread):
+            progress = QtCore.Signal(int, int, str)
+            result = QtCore.Signal(object)
+            finished_scan = QtCore.Signal(object)
+            failed = QtCore.Signal(str)
+            def __init__(self, target, **kwargs):
+                super().__init__()
+                self.target = target
+            def start(self):
+                pass
+        monkeypatch.setattr(gui, "ScanWorker", DummyWorker)
+        win.path_edit.setText(tmp_path)
+        win._start_scan()
+        assert win._worker is not None
+        assert win._worker.target == tmp_path
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
